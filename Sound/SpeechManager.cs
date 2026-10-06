@@ -1,4 +1,4 @@
-﻿#if !MAC
+#if !MAC
 
 using Composition;
 using System;
@@ -166,7 +166,10 @@ namespace Sound
                         if (!string.IsNullOrEmpty(text))
                         {
                             OnSpeech?.Invoke(displayText);
-                            speaker.Speak(text);
+                            if (request.PilotAudio != null && speaker is IRenderedSpeaker rendered)
+                                rendered.SpeakRendered(text, request.PilotAudio.Wave, () => request.PilotAudio.Requested(rendered.PlaybackMethod), request.PilotAudio.Finished);
+                            else
+                                speaker.Speak(text);
                         }
                     }
                 }

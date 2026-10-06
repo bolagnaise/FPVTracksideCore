@@ -1,0 +1,35 @@
+name: Pilot Audio source checks
+
+on:
+  pull_request:
+    paths:
+      - 'Sound/**'
+      - 'Tools/**'
+      - 'FPVMacSideCore/**'
+      - 'FPVTuxSideCore/**'
+      - 'WindowsPlatform/**'
+      - 'Tests/PilotAudio/**'
+      - '.github/workflows/pilot-audio.yml'
+  push:
+    branches: ['codex/pilot-audio-trackside']
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - name: Test callback ordering, failure and subprocess cancellation
+        run: dotnet run --project Tests/PilotAudio/PilotAudio.csproj -c Release
+      - name: Build shared sound code
+        run: dotnet build Sound/Sound.csproj -c Release
+      - name: Cross-compile Windows speech adapter
+        run: dotnet build WindowsPlatform/WindowsPlatform.csproj -c Release -p:EnableWindowsTargeting=true

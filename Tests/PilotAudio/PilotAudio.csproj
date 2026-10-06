@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Sound/PilotAudioCapture.cs" Link="PilotAudioCapture.cs" />
+    <Compile Include="../../Tools/IRenderedSpeaker.cs" Link="IRenderedSpeaker.cs" />
+    <Compile Include="../../Tools/ISpeaker.cs" Link="ISpeaker.cs" />
+    <Compile Include="../../Tools/RenderedProcessPlayback.cs" Link="RenderedProcessPlayback.cs" />
+    <Compile Include="../../FPVMacSideCore/MacSpeaker.cs" Link="MacSpeaker.cs" />
+    <Compile Include="../../FPVTuxSideCore/TuxSpeaker.cs" Link="TuxSpeaker.cs" />
+  </ItemGroup>
+</Project>
