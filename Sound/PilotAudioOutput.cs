@@ -13,6 +13,7 @@ namespace Sound
     // Explicitly enabled loopback bridge. Failures never prevent venue playback.
     internal static class PilotAudioOutput
     {
+        private static readonly string SourceBoot = Guid.NewGuid().ToString("N");
         private static readonly string Address = Environment.GetEnvironmentVariable("FPV_PILOT_AUDIO_URL");
         private static readonly string Token = Environment.GetEnvironmentVariable("FPV_PILOT_AUDIO_TOKEN");
         private static readonly HttpClient Client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(2) };
@@ -30,7 +31,7 @@ namespace Sound
             heartbeat ??= new Timer(_ => {
                 try {
                     string id = eventSource?.Invoke();
-                    if (!string.IsNullOrEmpty(id)) Send("heartbeat", new { event_source = id });
+                    if (!string.IsNullOrEmpty(id)) Send("heartbeat", new { event_source = id, source_boot = SourceBoot });
                 } catch { }
 
             }, null, TimeSpan.Zero, TimeSpan.FromSeconds(2));
@@ -57,12 +58,13 @@ namespace Sound
             string[] targets = string.IsNullOrEmpty(parameters.PilotCallsign) ? Array.Empty<string>() : new[] { parameters.PilotCallsign };
             string kind = Kind(key);
             string cueID = Guid.NewGuid().ToString("N");
+            string sourceBoot = SourceBoot;
             bool critical = kind == "emergency" || kind == "land" || kind == "cancel";
             return new PilotAudioCapture((wave, at) => Send("cue", new {
-                id = cueID, event_source = eventID, race_source = raceID,
+                source_boot = sourceBoot, id = cueID, event_source = eventID, race_source = raceID,
                 run_id = runID, kind, text, targets, participants, captured_at = at, wave
             }, critical), (state, method, at) => Send("playback", new {
-                id = cueID, event_source = eventID, race_source = raceID,
+                source_boot = sourceBoot, id = cueID, event_source = eventID, race_source = raceID,
                 run_id = runID, state, method, occurred_at = at
             }, critical));
         }
@@ -70,7 +72,7 @@ namespace Sound
         {
             if (!Enabled || manager?.Event == null) return;
             Send("cue", new {
-                id = Guid.NewGuid().ToString("N"), event_source = manager.Event.ID.ToString(),
+                source_boot = SourceBoot, id = Guid.NewGuid().ToString("N"), event_source = manager.Event.ID.ToString(),
                 race_source = race?.ID.ToString() ?? "", run_id = race == null ? "" : Runs.GetOrAdd(race.ID, _ => Guid.NewGuid().ToString("N")),
                 kind = "cancel", text = "", captured_at = DateTime.UtcNow, wave = Array.Empty<byte>()
             }, true);

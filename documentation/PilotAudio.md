@@ -36,6 +36,12 @@ PCM16 WAV of at most 30 seconds and resamples for transport.
 
 ## Source playback lifecycle
 
+Each process creates a fresh boot ID. Heartbeats, captured cues, cancellations and
+playback callbacks include that ID. The matching venue agent binds queued work to
+its held publisher credential/session/epoch and never retags old work after a
+source restart. Lease negotiation does not block Trackside's HTTP receipt thread.
+It acknowledges loopback receipt only, not cloud ownership or audible delivery.
+
 Each cue snapshots its event, race, start-attempt run ID, pilot targets and heat
 participants. Scheduled starts create a fresh run identity. Cancellation names
 the cancelled race rather than whichever race is current during the callback.
@@ -45,7 +51,11 @@ reports requested followed by exactly one completed, cancelled or failed,
 with that identity, UTC timestamp and playback method. The agent preserves
 cue/request/terminal FIFO within each priority lane. Source callbacks wait
 asynchronously for cue admission; a failed admission/callback suppresses later
-signals. An older agent without /playback can still receive cue audio.
+signals. Use the matching published AUFPV agent: older agents may reject the new
+boot metadata, and an older agent without /playback cannot supply lifecycle proof.
+Bootless older Trackside sources keep compatibility listening while their scope
+has not acquired a strict lease. A fenced or ambiguous acquisition needs operator
+recovery; the agent does not automatically take a competing publisher's lease.
 
 | Method | Software completion observation |
 |---|---|
@@ -75,7 +85,10 @@ dotnet build Sound/Sound.csproj -c Release
 dotnet build WindowsPlatform/WindowsPlatform.csproj -c Release -p:EnableWindowsTargeting=true
 ```
 
-The assertion harness links production coordinator and Mac/Linux adapter code.
+The assertion harness links production output/coordinator and Mac/Linux adapter code.
+It exercises the actual output publisher through authenticated loopback HTTP with
+minimal domain fixtures, proving the boot, event, race, targets, participants and
+original bytes survive mutation of the live objects after capture.
 It covers immutable export, nonblocking ordered callbacks, admission failures,
 terminal cancellation/failure, throwing observers, and cancellation of a real
 fixture subprocess without fallback resurrection. It emits no actual audio.

@@ -19,6 +19,7 @@ internal static class Program
     }
     public static async Task Main()
     {
+        await OutputFixture.Run();
         // The publication chain must not block the source audio callback.
         var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var log = new List<string>();

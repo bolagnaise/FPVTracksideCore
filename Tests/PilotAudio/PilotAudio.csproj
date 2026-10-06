@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net9.0</TargetFramework></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../Sound/PilotAudioOutput.cs" Link="PilotAudioOutput.cs" />
     <Compile Include="../../Sound/PilotAudioCapture.cs" Link="PilotAudioCapture.cs" />
     <Compile Include="../../Tools/IRenderedSpeaker.cs" Link="IRenderedSpeaker.cs" />
     <Compile Include="../../Tools/ISpeaker.cs" Link="ISpeaker.cs" />

@@ -11,7 +11,7 @@ on:
       - 'Tests/PilotAudio/**'
       - '.github/workflows/pilot-audio.yml'
   push:
-    branches: ['codex/pilot-audio-trackside']
+    branches: ['master', 'codex/pilot-audio-trackside']
 
 permissions:
   contents: read
