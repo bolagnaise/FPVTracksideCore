@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -82,7 +82,14 @@ namespace Sound
                 {
                     if (File.Exists(request.Filename))
                     {
-                        PlayWaveFile(request.Filename, request.Volume);
+                        if (request.PilotAudio != null)
+                        {
+                            try {
+                                var info = new FileInfo(request.Filename);
+                                if (info.Length <= 2 * 1024 * 1024) request.PilotAudio.Wave(File.ReadAllBytes(request.Filename));
+                            } catch { /* Bridge reads must not prevent venue playback. */ }
+                        }
+                        PlayWaveFile(request.Filename, request.Volume, request.PilotAudio);
                     }
                 }
                 catch (Exception ex)
@@ -94,7 +101,7 @@ namespace Sound
         }
 
 
-        private bool PlayWaveFile(string filename, int volume)
+        private bool PlayWaveFile(string filename, int volume, PilotAudioCapture capture)
         {
             SoundEffect effect;
 
@@ -111,10 +118,12 @@ namespace Sound
                 return false;
             }
 
+            var result = RenderedPlaybackResult.Failed;
             try
             {
-                SoundEffectInstance instance = effect.CreateInstance();
+                using SoundEffectInstance instance = effect.CreateInstance();
                 instance.Volume = Math.Clamp(volume / 100.0f, 0, 1);
+                capture?.Requested("monogame_state");
                 instance.Play();
 
                 Logger.SoundLog.Log(this, "Play Sound", filename, Logger.LogType.Notice);
@@ -123,12 +132,14 @@ namespace Sound
                 {
                     System.Threading.Thread.Sleep(1);
                 }
+                result = RenderedPlaybackResult.Completed;
             }
             catch (Exception e)
             {
                 Logger.SoundLog.LogException(this, e);
                 return false;
             }
+            finally { capture?.Finished(result); }
            
 
             return true;

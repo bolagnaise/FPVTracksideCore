@@ -1,4 +1,4 @@
-﻿using RaceLib;
+using RaceLib;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -115,6 +115,7 @@ namespace Sound
         {
             this.eventManager = eventManager;
             Profile = profile;
+            PilotAudioOutput.Configure(() => this.eventManager?.Event?.ID.ToString());
             Units = Units.Metric;
 
             backgroundQueue = new WorkQueue("Sound Manager Background");
@@ -449,6 +450,7 @@ namespace Sound
 
         private void RaceManager_OnRaceStartScheduled(Race race, DateTime startTime)
         {
+            PilotAudioOutput.Begin(race);
             // Swap in the new CTS before cancelling the old one — StopSound can be called
             // from another thread at any time, so the field must never point to a disposed object.
             CancellationTokenSource oldCts = startCountdownCts;
@@ -711,6 +713,7 @@ namespace Sound
             StopSound();
 
             SpeechRequest speechRequest = new SpeechRequest(text, 0, 100, new SpeechParameters(), DateTime.Now + expiry, null);
+            speechRequest.PilotAudio = PilotAudioOutput.Capture(eventManager, SoundKey.Custom1, new SpeechParameters(), text);
             speechManager?.EnqueueSpeech(speechRequest);
         }
 
@@ -799,12 +802,14 @@ namespace Sound
             if (sound.HasFile)
             {
                 SoundEffectRequest effectRequest = new SoundEffectRequest(sound.Filename, parameters.Priority, sound.Volume, DateTime.Now + expiry, onFinished);
+                effectRequest.PilotAudio = PilotAudioOutput.Capture(eventManager, soundKey, parameters, sound.TextToSpeech);
                 soundEffectManager?.EnqueueSoundEffect(effectRequest);
                 request = effectRequest;
             }
             else
             {
                 SpeechRequest speechRequest = new SpeechRequest(sound.TextToSpeech, sound.Rate, sound.Volume, parameters, DateTime.Now + expiry, onFinished);
+                speechRequest.PilotAudio = PilotAudioOutput.Capture(eventManager, soundKey, parameters, SpeechParameters.CreateTextToSpeech(sound.TextToSpeech, parameters));
                 speechManager?.EnqueueSpeech(speechRequest);
                 request = speechRequest;
             }
@@ -1087,6 +1092,7 @@ namespace Sound
 
         private void RaceManager_OnRaceCancelled(Race arg1, bool failure)
         {
+            PilotAudioOutput.Cancel(eventManager, arg1);
             StopSound();
             if (failure)
             {
@@ -1198,6 +1204,7 @@ namespace Sound
 
     public abstract class SoundRequest
     {
+        internal PilotAudioCapture PilotAudio { get; set; }
         public DateTime Expiry { get; private set; }
         public int Priority { get; private set; }
         public System.Action OnFinish { get; private set; }

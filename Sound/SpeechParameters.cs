@@ -1,4 +1,4 @@
-﻿using Composition;
+using Composition;
 using RaceLib;
 using System;
 using System.Collections.Generic;
@@ -59,6 +59,7 @@ namespace Sound
         public double SecondsExpiry { get; set; }
 
         public bool Forced { get; set; }
+        public string PilotCallsign { get; private set; }
 
         public SpeechParameters()
         {
@@ -127,6 +128,7 @@ namespace Sound
             if (type == Types.pilot && value is Pilot pilot)
             {
                 displayOverrides[type] = pilot.Name;
+                PilotCallsign = pilot.Name;
                 value = pilot.Phonetic;
             }
 
