@@ -42,12 +42,12 @@ namespace Sound
             if (Runs.Count >= 512) Runs.Clear();
             if (race != null) Runs[race.ID] = Guid.NewGuid().ToString("N");
         }
-        public static PilotAudioCapture Capture(EventManager manager, SoundKey key, SpeechParameters parameters, string text, Race snapshotRace = null)
+        public static PilotAudioCapture Capture(EventManager manager, SoundKey key, SpeechParameters parameters, string text, Race snapshotRace = null, string audioFile = null)
         {
-            try { return CaptureContext(manager, key, parameters, text, snapshotRace); }
+            try { return CaptureContext(manager, key, parameters, text, snapshotRace, audioFile); }
             catch { return null; }
         }
-        private static PilotAudioCapture CaptureContext(EventManager manager, SoundKey key, SpeechParameters parameters, string text, Race snapshotRace)
+        private static PilotAudioCapture CaptureContext(EventManager manager, SoundKey key, SpeechParameters parameters, string text, Race snapshotRace, string audioFile)
         {
             if (!Enabled || manager?.Event == null) return null;
             Race race = snapshotRace ?? manager.RaceManager.CurrentRace;
@@ -62,7 +62,9 @@ namespace Sound
             bool critical = kind == "emergency" || kind == "land" || kind == "cancel";
             return new PilotAudioCapture((wave, at) => Send("cue", new {
                 source_boot = sourceBoot, id = cueID, event_source = eventID, race_source = raceID,
-                run_id = runID, kind, text, targets, participants, captured_at = at, wave
+                run_id = runID, kind, text, sound_key = key.ToString(),
+                audio_file = string.IsNullOrEmpty(audioFile) ? "" : System.IO.Path.GetFileName(audioFile),
+                targets, participants, captured_at = at, wave
             }, critical), (state, method, at) => Send("playback", new {
                 source_boot = sourceBoot, id = cueID, event_source = eventID, race_source = raceID,
                 run_id = runID, state, method, occurred_at = at

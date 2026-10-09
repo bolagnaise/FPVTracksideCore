@@ -65,7 +65,7 @@ internal static class OutputFixture
             Sound.PilotAudioOutput.Configure(() => manager.Event.ID.ToString());
             await heartbeat.Task.WaitAsync(TimeSpan.FromSeconds(3));
             Sound.PilotAudioOutput.Begin(race);
-            var capture = Sound.PilotAudioOutput.Capture(manager, Sound.SoundKey.RaceStart, new Sound.SpeechParameters { PilotCallsign = "Alice" }, "Start");
+            var capture = Sound.PilotAudioOutput.Capture(manager, Sound.SoundKey.RaceStart, new Sound.SpeechParameters { PilotCallsign = "Alice" }, "Start", audioFile: "/venue/custom-start.wav");
             if (capture == null) throw new Exception("output capture unavailable");
             // Mutating the live event/heat after capture must not retag async work.
             manager.Event.ID = Guid.NewGuid(); race.Pilots[0].Name = "Bob"; race.ID = Guid.NewGuid();
@@ -73,12 +73,18 @@ internal static class OutputFixture
             if (!await capture.Delivery.WaitAsync(TimeSpan.FromSeconds(3))) throw new Exception("output delivery failed");
             var delivered = messages.Where(m => m.Path != "/heartbeat").ToArray();
             if (delivered.Length != 3 || delivered[0].Path != "/cue" || delivered[1].Body.GetProperty("state").GetString() != "requested" || delivered[2].Body.GetProperty("state").GetString() != "completed") throw new Exception("output callback ordering");
+            if (delivered[0].Body.GetProperty("sound_key").GetString() != "RaceStart" || delivered[0].Body.GetProperty("audio_file").GetString() != "custom-start.wav") throw new Exception("local sound identity missing or contains path");
             string boot = messages.First(m => m.Path == "/heartbeat").Body.GetProperty("source_boot").GetString();
             if (!Guid.TryParseExact(boot, "N", out _)) throw new Exception("process boot missing");
             foreach (var message in delivered) {
                 if (message.Body.GetProperty("source_boot").GetString() != boot || message.Body.GetProperty("event_source").GetString() != originalEvent || message.Body.GetProperty("race_source").GetString() != originalRace) throw new Exception("async source identity changed");
             }
             if (delivered[0].Body.GetProperty("participants")[0].GetString() != "Alice" || delivered[0].Body.GetProperty("targets")[0].GetString() != "Alice" || delivered[0].Body.GetProperty("wave").GetString() != "AQID") throw new Exception("mutable original output");
+            var spoken = Sound.PilotAudioOutput.Capture(manager, Sound.SoundKey.AnnouncePilotChannel, new Sound.SpeechParameters(), "Bola on R1");
+            spoken.Wave(new byte[]{1,2,3}); spoken.Finished(Tools.RenderedPlaybackResult.Completed);
+            if (!await spoken.Delivery.WaitAsync(TimeSpan.FromSeconds(3))) throw new Exception("speech delivery failed");
+            var speechCue = messages.Last(m => m.Path == "/cue").Body;
+            if (speechCue.GetProperty("text").GetString() != "Bola on R1" || speechCue.GetProperty("sound_key").GetString() != "AnnouncePilotChannel" || speechCue.GetProperty("audio_file").GetString() != "") throw new Exception("resolved local speech changed");
         } finally { stop.Cancel(); await server; listener.Stop(); }
         Console.WriteLine("Pilot Audio actual output HTTP boot/snapshot assertions passed (domain fixtures; no audio hardware).");
     }

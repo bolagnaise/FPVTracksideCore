@@ -802,7 +802,7 @@ namespace Sound
             if (sound.HasFile)
             {
                 SoundEffectRequest effectRequest = new SoundEffectRequest(sound.Filename, parameters.Priority, sound.Volume, DateTime.Now + expiry, onFinished);
-                effectRequest.PilotAudio = PilotAudioOutput.Capture(eventManager, soundKey, parameters, sound.TextToSpeech);
+                effectRequest.PilotAudio = PilotAudioOutput.Capture(eventManager, soundKey, parameters, sound.TextToSpeech, audioFile: sound.Filename);
                 soundEffectManager?.EnqueueSoundEffect(effectRequest);
                 request = effectRequest;
             }
