@@ -987,6 +987,9 @@ namespace UI
             }
 
             SoundManager.StopSound();
+            // Open one fresh attempt before any asynchronous pre-start speech or
+            // timing work, including immediate, delayed and staggered starts.
+            SoundManager.PrepareRaceStart(race);
 
             videoManager.StartRecording(race);
 

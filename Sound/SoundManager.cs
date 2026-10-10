@@ -450,7 +450,8 @@ namespace Sound
 
         private void RaceManager_OnRaceStartScheduled(Race race, DateTime startTime)
         {
-            PilotAudioOutput.Begin(race);
+            // The attempt was opened before the arming announcement. Scheduling
+            // the tone must retain that identity through countdown/start/laps.
             // Swap in the new CTS before cancelling the old one — StopSound can be called
             // from another thread at any time, so the field must never point to a disposed object.
             CancellationTokenSource oldCts = startCountdownCts;
@@ -827,6 +828,11 @@ namespace Sound
             }
         }
 
+
+        public void PrepareRaceStart(Race race)
+        {
+            PilotAudioOutput.Begin(race);
+        }
 
         public void StartRaceIn(TimeSpan timeSpan, System.Action onFinishedSpeech)
         {

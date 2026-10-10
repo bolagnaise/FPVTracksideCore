@@ -18,6 +18,10 @@ namespace Sound
         private static readonly string Token = Environment.GetEnvironmentVariable("FPV_PILOT_AUDIO_TOKEN");
         private static readonly HttpClient Client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = TimeSpan.FromSeconds(2) };
         private static readonly SemaphoreSlim Uploads = new SemaphoreSlim(2);
+        private static readonly SemaphoreSlim CueUploads = new SemaphoreSlim(2);
+        private static readonly SemaphoreSlim Heartbeats = new SemaphoreSlim(1);
+        private static readonly SemaphoreSlim PendingUploads = new SemaphoreSlim(32);
+        private static readonly SemaphoreSlim PendingCriticalUploads = new SemaphoreSlim(16);
         private static readonly SemaphoreSlim CriticalUploads = new SemaphoreSlim(4);
         private static readonly ConcurrentDictionary<Guid, string> Runs = new ConcurrentDictionary<Guid, string>();
         private static Func<string> eventSource;
@@ -102,14 +106,20 @@ namespace Sound
         }
         private static Task<bool> Send(string path, object payload, bool critical = false)
         {
-            var budget = critical ? CriticalUploads : Uploads;
-            if (!Enabled || !budget.Wait(0)) return Task.FromResult(false);
+            // Cue bytes must not compete with heartbeats or playback receipts.
+            // Bound queued work and its wait so congestion cannot replay stale starts.
+            var budget = critical ? CriticalUploads : path == "cue" ? CueUploads : path == "heartbeat" ? Heartbeats : Uploads;
+            var pending = critical ? PendingCriticalUploads : PendingUploads;
+            if (!Enabled || !pending.Wait(0)) return Task.FromResult(false);
             // Serialize before starting work, keeping source identities immutable.
             byte[] body;
             try { body = JsonSerializer.SerializeToUtf8Bytes(payload); }
-            catch { budget.Release(); return Task.FromResult(false); }
+            catch { pending.Release(); return Task.FromResult(false); }
             return Task.Run(async () => {
+                bool acquired = false;
                 try {
+                    acquired = await budget.WaitAsync(TimeSpan.FromMilliseconds(500));
+                    if (!acquired) return false;
                     using var request = new HttpRequestMessage(HttpMethod.Post, Address.TrimEnd('/') + "/" + path);
                     request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", Token);
                     request.Content = new ByteArrayContent(body);
@@ -117,7 +127,7 @@ namespace Sound
                     using var response = await Client.SendAsync(request);
                     return response.IsSuccessStatusCode;
                 } catch { return false; }
-                finally { budget.Release(); }
+                finally { if (acquired) budget.Release(); pending.Release(); }
             });
         }
     }

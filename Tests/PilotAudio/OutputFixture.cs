@@ -53,6 +53,7 @@ internal static class OutputFixture
                     using var json = JsonDocument.Parse(await reader.ReadToEndAsync(stop.Token));
                     string path = request.Request.Url.AbsolutePath;
                     messages.Enqueue((path, json.RootElement.Clone()));
+                    if (path == "/cue" && json.RootElement.GetProperty("text").GetString() == "burst") await Task.Delay(250);
                     request.Response.StatusCode = 204; request.Response.Close();
                     if (path == "/heartbeat") heartbeat.TrySetResult(true);
                 }
@@ -85,6 +86,31 @@ internal static class OutputFixture
             if (!await spoken.Delivery.WaitAsync(TimeSpan.FromSeconds(3))) throw new Exception("speech delivery failed");
             var speechCue = messages.Last(m => m.Path == "/cue").Body;
             if (speechCue.GetProperty("text").GetString() != "Bola on R1" || speechCue.GetProperty("sound_key").GetString() != "AnnouncePilotChannel" || speechCue.GetProperty("audio_file").GetString() != "") throw new Exception("resolved local speech changed");
+            // A retry of the same heat must open before its arming speech, and
+            // its later countdown/tone must retain that new attempt identity.
+            manager.RaceManager.CurrentRace = new RaceLib.Race();
+            var attemptRace = manager.RaceManager.CurrentRace;
+            string priorRun = null;
+            foreach (var terminal in new[] { Sound.SoundKey.RaceOver, Sound.SoundKey.StandDownCancelled }) {
+                Sound.PilotAudioOutput.Begin(attemptRace);
+                string run = null;
+                foreach (var key in new[] { Sound.SoundKey.StartRaceIn, Sound.SoundKey.StartRaceIn1, Sound.SoundKey.RaceStart, terminal }) {
+                    var c = Sound.PilotAudioOutput.Capture(manager, key, new Sound.SpeechParameters(), "attempt");
+                    c.Wave(new byte[] { 1, 2, 3 });
+                    if (!await c.Delivery.WaitAsync(TimeSpan.FromSeconds(3))) throw new Exception("race attempt cue delivery failed");
+                    var body = messages.Last(m => m.Path == "/cue").Body;
+                    var cueRun = body.GetProperty("run_id").GetString();
+                    if (run == null) { run = cueRun; if (run == priorRun) throw new Exception("restarted heat retained closed attempt"); }
+                    if (run != cueRun) throw new Exception("arming/countdown/tone changed attempt");
+                }
+                priorRun = run;
+            }
+            var burst = Enumerable.Range(0, 3).Select(_ => {
+                var c = Sound.PilotAudioOutput.Capture(manager, Sound.SoundKey.RaceStart, new Sound.SpeechParameters(), "burst");
+                c.Wave(new byte[] { 1, 2, 3 }); return c;
+            }).ToArray();
+            var results = await Task.WhenAll(burst.Select(c => c.Delivery)).WaitAsync(TimeSpan.FromSeconds(4));
+            if (results.Any(ok => !ok)) throw new Exception("Overlapping start cues silently dropped at the loopback bridge");
         } finally { stop.Cancel(); await server; listener.Stop(); }
         Console.WriteLine("Pilot Audio actual output HTTP boot/snapshot assertions passed (domain fixtures; no audio hardware).");
     }
