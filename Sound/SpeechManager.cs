@@ -166,9 +166,10 @@ namespace Sound
                         if (!string.IsNullOrEmpty(text))
                         {
                             OnSpeech?.Invoke(displayText);
-                            if (request.PilotAudio != null && speaker is IRenderedSpeaker rendered)
+                            if (request.PilotAudio != null && speaker is IRenderedSpeaker rendered) {
+                                request.PilotAudio.Announce();
                                 rendered.SpeakRendered(text, request.PilotAudio.Wave, () => request.PilotAudio.Requested(rendered.PlaybackMethod), request.PilotAudio.Finished);
-                            else
+                            } else
                                 speaker.Speak(text);
                         }
                     }

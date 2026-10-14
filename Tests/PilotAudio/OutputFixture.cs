@@ -43,6 +43,7 @@ internal static class OutputFixture
         using var listener = new HttpListener(); listener.Prefixes.Add(address + "/"); listener.Start();
         using var stop = new CancellationTokenSource();
         var messages = new ConcurrentQueue<(string Path, JsonElement Body)>();
+        int supportEarly = 0;
         var heartbeat = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var server = Task.Run(async () => {
             try {
@@ -54,7 +55,12 @@ internal static class OutputFixture
                     string path = request.Request.Url.AbsolutePath;
                     messages.Enqueue((path, json.RootElement.Clone()));
                     if (path == "/cue" && json.RootElement.GetProperty("text").GetString() == "burst") await Task.Delay(250);
-                    request.Response.StatusCode = 204; request.Response.Close();
+                    if (path == "/capabilities" && Volatile.Read(ref supportEarly) == 1) {
+                        byte[] body = System.Text.Encoding.UTF8.GetBytes("{\"early_speech_v1\":true}");
+                        request.Response.ContentType="application/json"; request.Response.ContentLength64=body.Length;
+                        request.Response.StatusCode=200; await request.Response.OutputStream.WriteAsync(body);
+                    } else request.Response.StatusCode = 204;
+                    request.Response.Close();
                     if (path == "/heartbeat") heartbeat.TrySetResult(true);
                 }
             } catch (OperationCanceledException) { }
@@ -72,7 +78,7 @@ internal static class OutputFixture
             manager.Event.ID = Guid.NewGuid(); race.Pilots[0].Name = "Bob"; race.ID = Guid.NewGuid();
             capture.Wave(new byte[] { 1, 2, 3 }); capture.Requested("monogame_state"); capture.Finished(Tools.RenderedPlaybackResult.Completed);
             if (!await capture.Delivery.WaitAsync(TimeSpan.FromSeconds(3))) throw new Exception("output delivery failed");
-            var delivered = messages.Where(m => m.Path != "/heartbeat").ToArray();
+            var delivered = messages.Where(m => m.Path != "/heartbeat" && m.Path != "/capabilities").ToArray();
             if (delivered.Length != 3 || delivered[0].Path != "/cue" || delivered[1].Body.GetProperty("state").GetString() != "requested" || delivered[2].Body.GetProperty("state").GetString() != "completed") throw new Exception("output callback ordering");
             if (delivered[0].Body.GetProperty("sound_key").GetString() != "RaceStart" || delivered[0].Body.GetProperty("audio_file").GetString() != "custom-start.wav") throw new Exception("local sound identity missing or contains path");
             string boot = messages.First(m => m.Path == "/heartbeat").Body.GetProperty("source_boot").GetString();
@@ -105,6 +111,21 @@ internal static class OutputFixture
                 }
                 priorRun = run;
             }
+            Volatile.Write(ref supportEarly, 1);
+            var capDeadline = DateTime.UtcNow.AddSeconds(5);
+            while (!Sound.PilotAudioOutput.EarlySpeechAvailable && DateTime.UtcNow < capDeadline) await Task.Delay(20);
+            if (!Sound.PilotAudioOutput.EarlySpeechAvailable) throw new Exception("early capability not negotiated");
+            var early = Sound.PilotAudioOutput.Capture(manager, Sound.SoundKey.StartRaceIn, new Sound.SpeechParameters(), "early before rendering");
+            early.Announce();
+            if (!await early.SpeechDelivery.WaitAsync(TimeSpan.FromSeconds(2))) throw new Exception("early text not sent");
+            var intent = messages.Last(m=>m.Path=="/speech").Body;
+            if (messages.Any(m=>m.Path=="/cue" && m.Body.GetProperty("id").GetString()==intent.GetProperty("id").GetString())) throw new Exception("WAV published before rendering");
+            await Task.Delay(150); // controlled renderer gap, not a physical latency measurement
+            early.Wave(new byte[]{1,2,3}); early.Requested("afplay_exit"); early.Finished(Tools.RenderedPlaybackResult.Completed);
+            if (!await early.Delivery.WaitAsync(TimeSpan.FromSeconds(2))) throw new Exception("original path blocked by text");
+            var original = messages.Last(m=>m.Path=="/cue").Body;
+            foreach (string field in new[]{"id","event_source","race_source","run_id","source_boot","captured_at","text"})
+                if (intent.GetProperty(field).ToString()!=original.GetProperty(field).ToString()) throw new Exception("early/original identity changed: "+field);
             var burst = Enumerable.Range(0, 3).Select(_ => {
                 var c = Sound.PilotAudioOutput.Capture(manager, Sound.SoundKey.RaceStart, new Sound.SpeechParameters(), "burst");
                 c.Wave(new byte[] { 1, 2, 3 }); return c;

@@ -26,6 +26,8 @@ namespace Sound
         private static readonly ConcurrentDictionary<Guid, string> Runs = new ConcurrentDictionary<Guid, string>();
         private static Func<string> eventSource;
         private static Timer heartbeat;
+        private static volatile bool earlySpeechAvailable;
+        internal static bool EarlySpeechAvailable => earlySpeechAvailable;
         public static bool Enabled => Uri.TryCreate(Address, UriKind.Absolute, out var uri) && uri.Scheme == "http" && uri.IsLoopback && !string.IsNullOrEmpty(Token) && Token.Length >= 32;
 
         public static void Configure(Func<string> source)
@@ -35,7 +37,10 @@ namespace Sound
             heartbeat ??= new Timer(_ => {
                 try {
                     string id = eventSource?.Invoke();
-                    if (!string.IsNullOrEmpty(id)) Send("heartbeat", new { event_source = id, source_boot = SourceBoot });
+                    if (!string.IsNullOrEmpty(id)) {
+                        Send("heartbeat", new { event_source = id, source_boot = SourceBoot });
+                        Send("capabilities", new { event_source = id, source_boot = SourceBoot });
+                    }
                 } catch { }
 
             }, null, TimeSpan.Zero, TimeSpan.FromSeconds(2));
@@ -72,7 +77,11 @@ namespace Sound
             }, critical), (state, method, at) => Send("playback", new {
                 source_boot = sourceBoot, id = cueID, event_source = eventID, race_source = raceID,
                 run_id = runID, state, method, occurred_at = at
-            }, critical));
+            }, critical), earlySpeechAvailable && string.IsNullOrEmpty(audioFile) && !string.IsNullOrEmpty(text)
+                ? at => Send("speech", new {
+                    source_boot = sourceBoot, id = cueID, event_source = eventID, race_source = raceID,
+                    run_id = runID, kind, text, sound_key = key.ToString(), targets, participants, captured_at = at
+                }, critical) : null);
         }
         public static void Cancel(EventManager manager, Race race)
         {
@@ -108,7 +117,7 @@ namespace Sound
         {
             // Cue bytes must not compete with heartbeats or playback receipts.
             // Bound queued work and its wait so congestion cannot replay stale starts.
-            var budget = critical ? CriticalUploads : path == "cue" ? CueUploads : path == "heartbeat" ? Heartbeats : Uploads;
+            var budget = critical ? CriticalUploads : (path == "cue" || path == "speech") ? CueUploads : path == "heartbeat" ? Heartbeats : Uploads;
             var pending = critical ? PendingCriticalUploads : PendingUploads;
             if (!Enabled || !pending.Wait(0)) return Task.FromResult(false);
             // Serialize before starting work, keeping source identities immutable.
@@ -125,8 +134,15 @@ namespace Sound
                     request.Content = new ByteArrayContent(body);
                     request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
                     using var response = await Client.SendAsync(request);
+                    if (path == "capabilities") {
+                        earlySpeechAvailable = false;
+                        if (response.IsSuccessStatusCode && response.Content.Headers.ContentType?.MediaType == "application/json") {
+                            using var capability = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                            earlySpeechAvailable = capability.RootElement.TryGetProperty("early_speech_v1", out var flag) && flag.ValueKind == JsonValueKind.True;
+                        }
+                    }
                     return response.IsSuccessStatusCode;
-                } catch { return false; }
+                } catch { if (path == "capabilities") earlySpeechAvailable = false; return false; }
                 finally { if (acquired) budget.Release(); pending.Release(); }
             });
         }
